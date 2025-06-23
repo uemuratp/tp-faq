@@ -1,10 +1,12 @@
 import streamlit as st
 import pandas as pd
+import os
 
 # ExcelからFAQを読み込む
 def load_faq_from_excel(file_path):
     df = pd.read_excel(file_path)
-    df.columns = df.columns.str.strip()  # 列名の空白除去
+    df.columns = df.columns.str.strip()
+    df = df.fillna('')
     faqs = df.to_dict(orient='records')
     return faqs
 
@@ -30,13 +32,12 @@ def run_search(query, search_mode, faqs):
 
 # メインアプリ
 def main():
-    st.title("FAQ検索アプリ")
+    st.title("📚 FAQ検索")
 
-    # ファイルとラベルの対応表
     faq_files = [
         {"label": "工事関係", "path": "faq.xlsx"},
         {"label": "事務関係", "path": "faq2.xlsx"},
-        {"label": "その他（作成中）", "path": "other_faq.xlsx"}
+        {"label": "その他（作成中）", "path": "other_faq.xlsx"},
     ]
 
     options = [f["label"] for f in faq_files]
@@ -54,21 +55,20 @@ def main():
         st.error(f"FAQの読み込みに失敗しました: {e}")
         return
 
-    # 検索状態管理
     if "query" not in st.session_state:
         st.session_state.query = ""
     if "run_search" not in st.session_state:
         st.session_state.run_search = False
 
-    # エンターキーで検索実行
     def trigger_search():
         st.session_state.run_search = True
 
     st.text_input(
-        "検索キーワードを空白で区切って入力してください",
+        "🔍 検索キーワードを空白で区切って入力してください",
         key="query",
         on_change=trigger_search
     )
+
     search_mode = st.radio("検索モードを選択してください", ('AND', 'OR'))
 
     if st.button("検索（ボタン）を押してもOK") or st.session_state.run_search:
@@ -81,17 +81,23 @@ def main():
         st.write(f"### 【FAQ検索結果 - {search_mode}検索】")
         if results:
             for r in results:
-                st.write(f"**検索ワード:** {r.get('質問', '').strip()}")
-                answer = r.get('回答', '')
-                if pd.isna(answer):
-                    answer = ''
-                st.write(f"**回答:** {answer.strip()}")
-                st.write(f"**関連ワード:** {r.get('関連ワード', '').strip()}")
+                question = str(r.get('質問', '')).strip()
+                answer = str(r.get('回答', '')).strip()
+                
+                related_value = r.get('関連ワード', '')
+                if not isinstance(related_value, str):
+                    related_value = str(related_value)
+                related = related_value.strip()
+                if related == '':
+                    related = 'なし'
+
+                st.write(f"**質問:** {question}")
+                st.write(f"**回答:** {answer}")
+                st.write(f"**関連ワード:** {related}")
                 st.markdown("---")
         else:
             st.info("該当するFAQはありません。")
 
-        # 検索後に状態をリセット
         st.session_state.run_search = False
 
 if __name__ == '__main__':
