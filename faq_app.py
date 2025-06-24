@@ -4,7 +4,7 @@ import os
 import base64
 
 def rerun():
-    st.rerun()  # ここを st.experimental_rerun に変更
+    st.rerun()
 
 def check_password():
     if "authenticated" not in st.session_state:
@@ -42,6 +42,16 @@ def search_faqs(keywords, faqs, search_mode='AND'):
 def run_search(query, search_mode, faqs):
     keywords = query.lower().split()
     return search_faqs(keywords, faqs, search_mode)
+
+def log_unmatched_query(query):
+    try:
+        log_dir = "logs"
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, "unmatched_queries.log")
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(query.strip() + "\n")
+    except Exception as e:
+        st.warning(f"ログの保存に失敗しました: {e}")
 
 def display_attachment(file_name):
     if not file_name:
@@ -117,13 +127,17 @@ def main():
             st.session_state.search_results = results
             st.session_state.run_search = False
 
+            # 結果ゼロ件ならログに保存
+            if not results:
+                log_unmatched_query(st.session_state.query)
+
         if st.session_state.search_results:
             st.write(f"### 【FAQ検索結果 - {search_mode}検索】")
             for i, r in enumerate(st.session_state.search_results):
                 question = str(r.get('質問', '')).strip()
                 if st.button(question, key=f"faq_{i}"):
                     st.session_state.selected_faq_index = i
-                    rerun()  # ← ここで即再実行して状態反映！
+                    rerun()
         else:
             st.info("該当するFAQはありません。")
     else:
@@ -152,7 +166,7 @@ def main():
 
             if st.button("🔙 戻る"):
                 st.session_state.selected_faq_index = None
-                rerun()  # 戻る時も即反映したいなら rerun() 呼ぶ
+                rerun()
         else:
             st.error("FAQの詳細を表示できません。")
             st.session_state.selected_faq_index = None
