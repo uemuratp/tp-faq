@@ -3,15 +3,12 @@ import pandas as pd
 import os
 import base64
 
-# --- 強制再実行用関数 ---
 def rerun():
-    st.rerun()
+    st.rerun()  # ここを st.experimental_rerun に変更
 
-# --- パスワードチェック ---
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
-
     if not st.session_state.authenticated:
         pwd = st.text_input("パスワードを入力してください", type="password")
         if pwd == "tp0000":
@@ -20,7 +17,7 @@ def check_password():
         elif pwd:
             st.error("パスワードが違います。")
 
-# --- ExcelからFAQを読み込み ---
+@st.cache_data
 def load_faq_from_excel(file_path):
     df = pd.read_excel(file_path)
     df.columns = df.columns.str.strip()
@@ -28,7 +25,6 @@ def load_faq_from_excel(file_path):
     faqs = df.to_dict(orient='records')
     return faqs
 
-# --- 検索処理 ---
 def search_faqs(keywords, faqs, search_mode='AND'):
     results = []
     for faq in faqs:
@@ -47,16 +43,13 @@ def run_search(query, search_mode, faqs):
     keywords = query.lower().split()
     return search_faqs(keywords, faqs, search_mode)
 
-# --- ファイル表示補助 ---
 def display_attachment(file_name):
     if not file_name:
         return
-
     file_path = os.path.join(os.getcwd(), file_name)
     if not os.path.isfile(file_path):
         st.warning(f"添付ファイル「{file_name}」が見つかりません。")
         return
-
     ext = file_name.lower().split('.')[-1]
     if ext in ['jpg', 'jpeg', 'png', 'gif']:
         st.image(file_path, caption=file_name)
@@ -69,11 +62,9 @@ def display_attachment(file_name):
     else:
         st.markdown(f"[添付ファイルを開く]({file_name})")
 
-# --- メイン ---
 def main():
     st.title("📚 FAQ検索")
 
-    # パスワードチェック
     check_password()
     if not st.session_state.get("authenticated", False):
         return
@@ -86,9 +77,7 @@ def main():
 
     options = [f["label"] for f in faq_files]
     selected_label = st.selectbox("知りたい内容を選択してください", options)
-
     selected_file = next((f["path"] for f in faq_files if f["label"] == selected_label), None)
-
     if selected_file is None:
         st.error("ファイル選択が正しくありません。")
         return
@@ -103,56 +92,70 @@ def main():
         st.session_state.query = ""
     if "run_search" not in st.session_state:
         st.session_state.run_search = False
+    if "selected_faq_index" not in st.session_state:
+        st.session_state.selected_faq_index = None
+    if "search_results" not in st.session_state:
+        st.session_state.search_results = []
 
     def trigger_search():
         st.session_state.run_search = True
+        st.session_state.selected_faq_index = None
 
-    st.text_input(
-        "🔍 検索キーワードを空白で区切って入力してください",
-        key="query",
-        on_change=trigger_search
-    )
+    if st.session_state.selected_faq_index is None:
+        st.text_input(
+            "🔍 検索キーワードを空白で区切って入力してください",
+            key="query",
+            on_change=trigger_search
+        )
+        search_mode = st.radio("検索モードを選択してください", ('AND', 'OR'))
 
-    search_mode = st.radio("検索モードを選択してください", ('AND', 'OR'))
+        if st.button("検索") or st.session_state.run_search:
+            if not st.session_state.query.strip():
+                st.warning("検索キーワードを入力してください。")
+                return
+            results = run_search(st.session_state.query, search_mode, faqs)
+            st.session_state.search_results = results
+            st.session_state.run_search = False
 
-    if st.button("検索") or st.session_state.run_search:
-        if not st.session_state.query.strip():
-            st.warning("検索キーワードを入力してください。")
-            return
-
-        results = run_search(st.session_state.query, search_mode, faqs)
-
-        st.write(f"### 【FAQ検索結果 - {search_mode}検索】")
-        if results:
-            for r in results:
+        if st.session_state.search_results:
+            st.write(f"### 【FAQ検索結果 - {search_mode}検索】")
+            for i, r in enumerate(st.session_state.search_results):
                 question = str(r.get('質問', '')).strip()
-                answer = str(r.get('回答', '')).strip()
-
-                related_value = r.get('関連ワード', '')
-                if not isinstance(related_value, str):
-                    related_value = str(related_value)
-                related = related_value.strip()
-                if related == '':
-                    related = 'なし'
-
-                st.write(f"**質問:** {question}")
-                st.write(f"**回答:** {answer}")
-                st.write(f"**関連ワード:** {related}")
-
-                # 添付ファイルの表示（テキスト表示はせずファイルのみ表示）
-                attachment_value = r.get('添付ファイル', '')
-                if attachment_value:
-                    files = [f.strip() for f in str(attachment_value).split(",") if f.strip()]
-                    for f in files:
-                        display_attachment(f)
-                else:
-                    st.write("**添付ファイル:** なし")
-
-                st.markdown("---")
+                if st.button(question, key=f"faq_{i}"):
+                    st.session_state.selected_faq_index = i
+                    rerun()  # ← ここで即再実行して状態反映！
         else:
             st.info("該当するFAQはありません。")
+    else:
+        results = st.session_state.search_results
+        idx = st.session_state.selected_faq_index
+        if idx is not None and idx < len(results):
+            faq = results[idx]
+            st.write(f"### 質問: {faq.get('質問', '')}")
+            st.write(f"**回答:** {faq.get('回答', '')}")
 
-        st.session_state.run_search = False
+            related_value = faq.get('関連ワード', '')
+            if not isinstance(related_value, str):
+                related_value = str(related_value)
+            related = related_value.strip()
+            if related == '':
+                related = 'なし'
+            st.write(f"**関連ワード:** {related}")
+
+            attachment_value = faq.get('添付ファイル', '')
+            if attachment_value:
+                files = [f.strip() for f in str(attachment_value).split(",") if f.strip()]
+                for f in files:
+                    display_attachment(f)
+            else:
+                st.write("**添付ファイル:** なし")
+
+            if st.button("🔙 戻る"):
+                st.session_state.selected_faq_index = None
+                rerun()  # 戻る時も即反映したいなら rerun() 呼ぶ
+        else:
+            st.error("FAQの詳細を表示できません。")
+            st.session_state.selected_faq_index = None
 
 if __name__ == '__main__':
     main()
