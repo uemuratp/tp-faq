@@ -1,8 +1,26 @@
 import streamlit as st
 import pandas as pd
 import os
+import base64
 
-# ExcelからFAQを読み込む
+# --- 強制再実行用関数 ---
+def rerun():
+    st.rerun()
+
+# --- パスワードチェック ---
+def check_password():
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+
+    if not st.session_state.authenticated:
+        pwd = st.text_input("パスワードを入力してください", type="password")
+        if pwd == "tp0000":
+            st.session_state.authenticated = True
+            rerun()
+        elif pwd:
+            st.error("パスワードが違います。")
+
+# --- ExcelからFAQを読み込み ---
 def load_faq_from_excel(file_path):
     df = pd.read_excel(file_path)
     df.columns = df.columns.str.strip()
@@ -10,7 +28,7 @@ def load_faq_from_excel(file_path):
     faqs = df.to_dict(orient='records')
     return faqs
 
-# 質問と関連ワードだけを対象に検索
+# --- 検索処理 ---
 def search_faqs(keywords, faqs, search_mode='AND'):
     results = []
     for faq in faqs:
@@ -25,14 +43,40 @@ def search_faqs(keywords, faqs, search_mode='AND'):
                 results.append(faq)
     return results
 
-# 検索実行関数
 def run_search(query, search_mode, faqs):
     keywords = query.lower().split()
     return search_faqs(keywords, faqs, search_mode)
 
-# メインアプリ
+# --- ファイル表示補助 ---
+def display_attachment(file_name):
+    if not file_name:
+        return
+
+    file_path = os.path.join(os.getcwd(), file_name)
+    if not os.path.isfile(file_path):
+        st.warning(f"添付ファイル「{file_name}」が見つかりません。")
+        return
+
+    ext = file_name.lower().split('.')[-1]
+    if ext in ['jpg', 'jpeg', 'png', 'gif']:
+        st.image(file_path, caption=file_name)
+    elif ext == 'pdf':
+        with open(file_path, "rb") as f:
+            pdf_bytes = f.read()
+            base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="700" height="900" type="application/pdf"></iframe>'
+            st.markdown(pdf_display, unsafe_allow_html=True)
+    else:
+        st.markdown(f"[添付ファイルを開く]({file_name})")
+
+# --- メイン ---
 def main():
     st.title("📚 FAQ検索")
+
+    # パスワードチェック
+    check_password()
+    if not st.session_state.get("authenticated", False):
+        return
 
     faq_files = [
         {"label": "工事関係", "path": "faq.xlsx"},
@@ -71,7 +115,7 @@ def main():
 
     search_mode = st.radio("検索モードを選択してください", ('AND', 'OR'))
 
-    if st.button("検索（ボタン）を押してもOK") or st.session_state.run_search:
+    if st.button("検索") or st.session_state.run_search:
         if not st.session_state.query.strip():
             st.warning("検索キーワードを入力してください。")
             return
@@ -83,7 +127,7 @@ def main():
             for r in results:
                 question = str(r.get('質問', '')).strip()
                 answer = str(r.get('回答', '')).strip()
-                
+
                 related_value = r.get('関連ワード', '')
                 if not isinstance(related_value, str):
                     related_value = str(related_value)
@@ -94,6 +138,16 @@ def main():
                 st.write(f"**質問:** {question}")
                 st.write(f"**回答:** {answer}")
                 st.write(f"**関連ワード:** {related}")
+
+                # 添付ファイルの表示（テキスト表示はせずファイルのみ表示）
+                attachment_value = r.get('添付ファイル', '')
+                if attachment_value:
+                    files = [f.strip() for f in str(attachment_value).split(",") if f.strip()]
+                    for f in files:
+                        display_attachment(f)
+                else:
+                    st.write("**添付ファイル:** なし")
+
                 st.markdown("---")
         else:
             st.info("該当するFAQはありません。")
