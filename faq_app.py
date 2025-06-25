@@ -43,16 +43,6 @@ def run_search(query, search_mode, faqs):
     keywords = query.lower().split()
     return search_faqs(keywords, faqs, search_mode)
 
-def log_unmatched_query(query):
-    try:
-        log_dir = "logs"
-        os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, "unmatched_queries.log")
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(query.strip() + "\n")
-    except Exception as e:
-        st.warning(f"ログの保存に失敗しました: {e}")
-
 def display_attachment(file_name):
     if not file_name:
         return
@@ -98,6 +88,7 @@ def main():
         st.error(f"FAQの読み込みに失敗しました: {e}")
         return
 
+    # セッションステート初期化
     if "query" not in st.session_state:
         st.session_state.query = ""
     if "run_search" not in st.session_state:
@@ -106,20 +97,34 @@ def main():
         st.session_state.selected_faq_index = None
     if "search_results" not in st.session_state:
         st.session_state.search_results = []
+    if "show_all_questions" not in st.session_state:
+        st.session_state.show_all_questions = False
 
     def trigger_search():
         st.session_state.run_search = True
         st.session_state.selected_faq_index = None
+        st.session_state.show_all_questions = False
+
+    def show_all_questions():
+        st.session_state.show_all_questions = True
+        st.session_state.run_search = False
+        st.session_state.selected_faq_index = None
 
     if st.session_state.selected_faq_index is None:
-        st.text_input(
-            "🔍 検索キーワードを空白で区切って入力してください",
-            key="query",
-            on_change=trigger_search
-        )
+        # 入力 + ボタン表示
+        st.text_input("🔍 検索キーワードを空白で区切って入力してください", key="query", on_change=trigger_search)
         search_mode = st.radio("検索モードを選択してください", ('AND', 'OR'))
 
-        if st.button("検索") or st.session_state.run_search:
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("検索"):
+                trigger_search()
+        with col2:
+            if st.button("📋 一覧"):
+                show_all_questions()
+
+        # 検索結果表示
+        if st.session_state.run_search:
             if not st.session_state.query.strip():
                 st.warning("検索キーワードを入力してください。")
                 return
@@ -127,19 +132,26 @@ def main():
             st.session_state.search_results = results
             st.session_state.run_search = False
 
-            # 結果ゼロ件ならログに保存
-            if not results:
-                log_unmatched_query(st.session_state.query)
+            if results:
+                st.write(f"### 【FAQ検索結果 - {search_mode}検索】")
+                for i, r in enumerate(results):
+                    question = str(r.get('質問', '')).strip()
+                    if st.button(question, key=f"faq_search_{i}"):
+                        st.session_state.selected_faq_index = i
+                        rerun()
+            else:
+                st.info("該当するFAQはありません。")
 
-        if st.session_state.search_results:
-            st.write(f"### 【FAQ検索結果 - {search_mode}検索】")
-            for i, r in enumerate(st.session_state.search_results):
+        # 一覧表示
+        elif st.session_state.show_all_questions:
+            st.write("### 【FAQ一覧】")
+            st.session_state.search_results = faqs  # 全体を検索結果として保持
+            for i, r in enumerate(faqs):
                 question = str(r.get('質問', '')).strip()
-                if st.button(question, key=f"faq_{i}"):
+                if st.button(question, key=f"faq_list_{i}"):
                     st.session_state.selected_faq_index = i
                     rerun()
-        else:
-            st.info("該当するFAQはありません。")
+
     else:
         results = st.session_state.search_results
         idx = st.session_state.selected_faq_index
@@ -151,9 +163,7 @@ def main():
             related_value = faq.get('関連ワード', '')
             if not isinstance(related_value, str):
                 related_value = str(related_value)
-            related = related_value.strip()
-            if related == '':
-                related = 'なし'
+            related = related_value.strip() or 'なし'
             st.write(f"**関連ワード:** {related}")
 
             attachment_value = faq.get('添付ファイル', '')
