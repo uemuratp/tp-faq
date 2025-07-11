@@ -12,13 +12,11 @@ kakasi.setMode("K", "H")  # カタカナ→ひらがな
 kakasi.setMode("H", "H")  # ひらがなはそのまま
 converter = kakasi.getConverter()
 
-# 🔤 濁音を清音に正規化する関数
 def normalize_seion(char):
     decomposed = unicodedata.normalize('NFD', char)
     filtered = ''.join(c for c in decomposed if c not in ['\u3099', '\u309A'])
     return unicodedata.normalize('NFC', filtered)
 
-# 🔐 パスワード認証
 def check_password():
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
@@ -32,7 +30,6 @@ def check_password():
             else:
                 st.error("パスワードが違います。")
 
-# 📥 データ読み込み（Excel -> FAQ辞書）
 @st.cache_data
 def load_faq_from_excel(file_path):
     df = pd.read_excel(file_path).fillna('')
@@ -49,7 +46,6 @@ def load_faq_from_excel(file_path):
         })
     return faqs
 
-# 🔠 五十音ごとのFAQを分類
 def gojuon_sort(faqs):
     groups = {}
     for faq in faqs:
@@ -58,7 +54,6 @@ def gojuon_sort(faqs):
             groups.setdefault(initial, []).append(faq)
     return dict(sorted(groups.items()))
 
-# 📎 添付ファイルの表示
 def display_attachment(file_name):
     if not file_name:
         return
@@ -78,7 +73,6 @@ def display_attachment(file_name):
     else:
         st.markdown(f"[添付ファイルを開く]({file_name})")
 
-# 🔍 FAQ検索ロジック（AND/OR モード対応）
 def search_faqs(keywords, faqs, search_mode='AND'):
     results = []
     for faq in faqs:
@@ -91,33 +85,49 @@ def search_faqs(keywords, faqs, search_mode='AND'):
                 results.append(faq)
     return results
 
-# 🔍 検索UI（キーワード入力と検索/一覧ボタン）
 def search_ui(faqs, clear_query=False):
-    query = st.text_input("🔍 検索キーワードを空白で区切って入力してください", value=st.session_state.get("query", ""))
-    search_mode = st.radio("検索モードを選択してください", ('AND', 'OR'), index=('AND', 'OR').index(st.session_state.get("search_mode", "AND")))
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("検索", key=f"search_button_{'detail' if clear_query else 'home'}"):
-            keywords = query.lower().split()
-            results = search_faqs(keywords, faqs, search_mode)
-            st.session_state.search_results = results
-            st.session_state.selected_faq_index = None
-            st.session_state.show_all_questions = False
-            if not keywords:
-                st.warning("検索キーワードを入力してください。")
-            elif not results:
-                st.info("該当するFAQはありません。")
-            st.rerun()
-    with col2:
-        if st.button("📋 一覧", key=f"list_button_{'detail' if clear_query else 'home'}"):
-            st.session_state.search_results = faqs
-            st.session_state.selected_faq_index = None
-            st.session_state.show_all_questions = True
-            st.session_state.page = "list"
-            st.rerun()
+    with st.form(key=f"search_form_{'detail' if clear_query else 'home'}"):
+        query = st.text_input("🔍 検索キーワードを空白で区切って入力してください", value=st.session_state.get("query", ""))
+        search_mode = st.radio("検索モードを選択してください", ('AND', 'OR'), index=('AND', 'OR').index(st.session_state.get("search_mode", "AND")))
+        st.session_state.search_mode = search_mode
+
+        submitted = st.form_submit_button("検索")  # ✅ エンターキー対応
+
+    # 検索処理（エンターまたは検索ボタン）
+    if submitted:
+        keywords = query.lower().split()
+        results = search_faqs(keywords, faqs, search_mode)
+        st.session_state.search_results = results
+        st.session_state.selected_faq_index = None
+        st.session_state.show_all_questions = False
+        st.session_state.query = query  # 入力値をセッションに保存
+
+        # メッセージをセッションに保存して rerun 後に表示
+        if not keywords:
+            st.session_state.search_message = "検索キーワードを入力してください。"
+        elif not results:
+            st.session_state.search_message = "検索したワードに該当するものはありません。"
+        else:
+            st.session_state.search_message = ""
+        st.rerun()
+
+    # 一覧ボタン（別途設置）
+    if st.button("📋 一覧", key=f"list_button_{'detail' if clear_query else 'home'}"):
+        st.session_state.search_results = faqs
+        st.session_state.selected_faq_index = None
+        st.session_state.show_all_questions = True
+        st.session_state.page = "list"
+        st.session_state.search_message = ""  # メッセージリセット
+        st.rerun()
+
+    # 検索結果メッセージの表示（rerun後）
+    if "search_message" in st.session_state and st.session_state.search_message:
+        st.info(st.session_state.search_message)
+
+
 
 def render_home(faqs):
-    search_ui(faqs, clear_query=False)  # ← 修正点
+    search_ui(faqs, clear_query=False)
     if st.session_state.search_results:
         title = "【FAQ一覧】" if st.session_state.show_all_questions else f"【FAQ検索結果 - {st.session_state.search_mode}検索】"
         st.write(f"### {title}")
@@ -128,43 +138,12 @@ def render_home(faqs):
                 st.session_state.page = "detail"
                 st.rerun()
 
-def render_gojuon(faqs):
-    search_ui(faqs, clear_query=True)  # ← 修正点（ページ区別用）
-    groups = gojuon_sort(faqs)
-    # ... 以下略（この部分はあなたの元コードと同じ）
-
-
-def render_list(faqs):
-    if st.button("🔠 五十音表示"):
-        st.session_state.page = "gojuon"
-        st.session_state.selected_initial = None
-        st.rerun()
-
-    st.write("### FAQ一覧")
-
-    faqs_to_show = st.session_state.search_results if st.session_state.search_results else faqs
-
-    # 4列に分けてボタン表示
-    cols = st.columns(4)
-    for i, faq in enumerate(faqs_to_show):
-        question = faq.get('質問', '').strip()
-        col_idx = i % 4
-        with cols[col_idx]:
-            if st.button(question, key=f"list_faq_button_{i}"):
-                st.session_state.selected_faq_index = i
-                st.session_state.page = "detail"
-                st.rerun()
-
-    if st.button("🏠 ホームへ戻る"):
-        st.session_state.page = "home"
-        st.rerun()
-
 def chunk_list(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
 
 def render_gojuon(faqs):
-    search_ui(faqs)  # ホーム画面の検索機能を追加
+    search_ui(faqs)
     groups = gojuon_sort(faqs)
 
     row_groups = {
@@ -217,10 +196,12 @@ def render_gojuon(faqs):
                         st.rerun()
 
     st.markdown("---")
-    # 最下部に「ホームに戻る」ボタンを追加
     if st.button("🏠 ホームへ戻る"):
         st.session_state.page = "home"
+        st.session_state.search_results = []
+        st.session_state.show_all_questions = False
         st.rerun()
+
 
 def render_gojuon_list(faqs):
     initial = st.session_state.selected_initial
@@ -237,7 +218,35 @@ def render_gojuon_list(faqs):
         st.rerun()
     if st.button("🏠 ホームへ戻る"):
         st.session_state.page = "home"
+        st.session_state.search_results = []
+        st.session_state.show_all_questions = False
         st.rerun()
+
+
+def render_list(faqs):
+    if st.button("🔠 五十音表示"):
+        st.session_state.page = "gojuon"
+        st.session_state.selected_initial = None
+        st.rerun()
+
+    st.write("### FAQ一覧")
+    faqs_to_show = st.session_state.search_results if st.session_state.search_results else faqs
+    cols = st.columns(4)
+    for i, faq in enumerate(faqs_to_show):
+        question = faq.get('質問', '').strip()
+        col_idx = i % 4
+        with cols[col_idx]:
+            if st.button(question, key=f"list_faq_button_{i}"):
+                st.session_state.selected_faq_index = i
+                st.session_state.page = "detail"
+                st.rerun()
+
+    if st.button("🏠 ホームへ戻る"):
+        st.session_state.page = "home"
+        st.session_state.search_results = []
+        st.session_state.show_all_questions = False
+        st.rerun()
+
 
 def render_detail(faqs):
     if st.session_state.page == "detail":
@@ -247,8 +256,8 @@ def render_detail(faqs):
         groups = gojuon_sort(faqs)
         initial = st.session_state.selected_initial
         faqs_to_show = groups.get(initial, [])
-        idx = st.session_state.selected_faq_index
         results = faqs_to_show
+        idx = st.session_state.selected_faq_index
     else:
         st.error("不正なページ状態です。")
         return
@@ -274,12 +283,17 @@ def render_detail(faqs):
             st.rerun()
         if st.button("🏠 ホームへ戻る"):
             st.session_state.page = "home"
+            st.session_state.search_results = []
+            st.session_state.show_all_questions = False
             st.rerun()
     else:
         st.error("FAQの詳細を表示できません。")
         if st.button("🏠 ホームへ戻る"):
             st.session_state.page = "home"
+            st.session_state.search_results = []
+            st.session_state.show_all_questions = False
             st.rerun()
+
 
 def main():
     st.title("📚 FAQ検索")
@@ -297,6 +311,8 @@ def main():
         st.session_state.search_results = []
     if 'show_all_questions' not in st.session_state:
         st.session_state.show_all_questions = False
+    if 'search_mode' not in st.session_state:
+        st.session_state.search_mode = "AND"
 
     faq_files = [
         {"label": "工事関係", "path": "faq.xlsx"},
