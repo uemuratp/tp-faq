@@ -23,12 +23,13 @@ def check_password():
     if not st.session_state.authenticated:
         pwd = st.text_input("パスワードを入力してください", type="password")
         if st.button("ログイン"):
-            if pwd == "tp0000":
+            if "password" in st.secrets and pwd == st.secrets["password"]:
                 st.session_state.authenticated = True
                 st.session_state.page = "home"
                 st.rerun()
             else:
                 st.error("パスワードが違います。")
+
 
 @st.cache_data
 def load_faq_from_excel(file_path):
