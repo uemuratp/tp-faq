@@ -44,19 +44,23 @@ def normalize_seion(char):
 def load_faq_from_sheet(sheet_name):
     ws = get_worksheet(sheet_name)
     df = get_as_dataframe(ws, evaluate_formulas=True).fillna('').astype(str)
+
     faqs = []
     for _, row in df.iterrows():
-        question = row.get('質問', '')
+        # 'row' は Series なので .get() は使わず ['列名'] でアクセス
+        question = row['質問'] if '質問' in row else ''
         reading_raw = converter.do(str(question))
         normalized_reading = ''.join(normalize_seion(c) for c in reading_raw)
         faqs.append({
             '質問': question,
-            '回答': row.get('回答', ''),
-            '関連ワード': row.get('関連ワード', ''),
-            '添付ファイル': row.get('添付ファイル', ''),
+            '回答': row['回答'] if '回答' in row else '',
+            '関連ワード': row['関連ワード'] if '関連ワード' in row else '',
+            '添付ファイル': row['添付ファイル'] if '添付ファイル' in row else '',
             '読み': normalized_reading
         })
     return faqs
+
+
 
 # -------------------------------
 # ❌ 検索ヒットしなかったワードをログに記録
