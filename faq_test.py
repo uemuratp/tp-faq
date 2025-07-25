@@ -12,15 +12,50 @@ import json
 # -------------------------------
 # 🔐 Googleスプレッドシート認証
 # -------------------------------
+import os
+import json
+import gspread
+import streamlit as st
+from google.oauth2.service_account import Credentials
+
 @st.cache_resource
 def get_worksheet(sheet_name):
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        st.secrets["gcp_service_account"], scope
-    )
-    client = gspread.authorize(creds)
-    spreadsheet = client.open_by_key(st.secrets["spreadsheet_id"])
+    # ① 認証情報の読み込み（Cloud or ローカル自動判定）
+    creds_json = os.getenv('GOOGLE_CREDENTIALS')
+    if creds_json:
+        creds_info = json.loads(creds_json)
+    else:
+        # ローカル用ファイルパス（必要に応じて変更可）
+        local_path = os.path.join("toumei", "credentials.json")
+        if os.path.exists(local_path):
+            with open(local_path, "r", encoding="utf-8") as f:
+                creds_info = json.load(f)
+        else:
+            st.error("認証情報が見つかりません。環境変数 GOOGLE_CREDENTIALS または credentials.json を確認してください。")
+            st.stop()
+
+    # ② Google APIスコープ設定
+    SCOPES = [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive'
+    ]
+
+    # ③ 認証＆ワークシート取得
+    creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
+    gc = gspread.authorize(creds)
+
+    # ④ スプレッドシートIDの取得（環境変数 or credentials.json）
+    spreadsheet_id = os.getenv('SPREADSHEET_ID') or creds_info.get("spreadsheet_id", "")
+    if not spreadsheet_id:
+        st.error("スプレッドシートIDが見つかりません。credentials.json に 'spreadsheet_id' を追加してください。")
+        st.stop()
+
+    spreadsheet = gc.open_by_key(spreadsheet_id)
     return spreadsheet.worksheet(sheet_name)
+
+
+
+
 
 # -------------------------------
 # 🌤 ふりがな変換（漢字→ひらがな）
