@@ -18,6 +18,12 @@ import gspread
 import streamlit as st
 from google.oauth2.service_account import Credentials
 
+import os
+import json
+import gspread
+import streamlit as st
+from google.oauth2.service_account import Credentials
+
 @st.cache_resource
 def get_worksheet(sheet_name):
     try:
@@ -41,6 +47,36 @@ def get_worksheet(sheet_name):
             st.error("SPREADSHEET_ID が secrets に存在しません！")
             st.stop()
         spreadsheet_id = st.secrets["SPREADSHEET_ID"]
+
+    except Exception as e:
+        st.error(f"Cloud認証の読み込み失敗: {e}")
+
+        # 🔁 ローカル fallback（toumei/credentials.json）
+        local_path = os.path.join("toumei", "credentials.json")
+        if os.path.exists(local_path):
+            with open(local_path, "r", encoding="utf-8") as f:
+                creds_info = json.load(f)
+                spreadsheet_id = creds_info.get("spreadsheet_id", "")
+        else:
+            st.error("認証情報が見つかりません。Cloudでは secrets、ローカルでは toumei/credentials.json を確認してください。")
+            st.stop()
+
+    # ✅ Google Sheets APIスコープ設定
+    SCOPES = [
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive'
+    ]
+
+    creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
+    gc = gspread.authorize(creds)
+
+    if not spreadsheet_id:
+        st.error("スプレッドシートIDが見つかりません。")
+        st.stop()
+
+    spreadsheet = gc.open_by_key(spreadsheet_id)
+    return spreadsheet.worksheet(sheet_name)
+
 
 
 
