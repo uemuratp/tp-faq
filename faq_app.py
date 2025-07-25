@@ -12,11 +12,7 @@ import json
 # -------------------------------
 # 🔐 Googleスプレッドシート認証
 # -------------------------------
-import os
-import json
-import gspread
-import streamlit as st
-from google.oauth2.service_account import Credentials
+
 
 import os
 import json
@@ -27,31 +23,14 @@ from google.oauth2.service_account import Credentials
 @st.cache_resource
 def get_worksheet(sheet_name):
     try:
-        # 🔍 登録されている secrets キー一覧を表示
-        st.write("登録されている secrets キー一覧:", list(st.secrets.keys()))
-        
-        # 🔍 GOOGLE_CREDENTIALS が存在するか確認
-        if "GOOGLE_CREDENTIALS" not in st.secrets:
-            st.error("GOOGLE_CREDENTIALS が secrets に存在しません！")
-            st.stop()
-
-        creds_raw = st.secrets["GOOGLE_CREDENTIALS"]
-        st.text("GOOGLE_CREDENTIALS（先頭100文字）:")
-        st.text(creds_raw[:100])  # 長すぎないように一部表示
-
-        # 🔍 JSONとして読み込めるか確認
-        creds_info = json.loads(creds_raw)
-
-        # 🔍 SPREADSHEET_ID も確認
-        if "SPREADSHEET_ID" not in st.secrets:
-            st.error("SPREADSHEET_ID が secrets に存在しません！")
-            st.stop()
+        # ✅ 本番用：Secretsから読み込み（Cloud環境）
+        creds_info = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
         spreadsheet_id = st.secrets["SPREADSHEET_ID"]
 
     except Exception as e:
         st.error(f"Cloud認証の読み込み失敗: {e}")
 
-        # 🔁 ローカル fallback（toumei/credentials.json）
+        # 🔁 ローカル環境 fallback（toumei/credentials.json）
         local_path = os.path.join("toumei", "credentials.json")
         if os.path.exists(local_path):
             with open(local_path, "r", encoding="utf-8") as f:
@@ -61,12 +40,13 @@ def get_worksheet(sheet_name):
             st.error("認証情報が見つかりません。Cloudでは secrets、ローカルでは toumei/credentials.json を確認してください。")
             st.stop()
 
-    # ✅ Google Sheets APIスコープ設定
+    # Google API スコープ設定
     SCOPES = [
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive'
     ]
 
+    # 認証クレデンシャル作成
     creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
     gc = gspread.authorize(creds)
 
@@ -76,6 +56,7 @@ def get_worksheet(sheet_name):
 
     spreadsheet = gc.open_by_key(spreadsheet_id)
     return spreadsheet.worksheet(sheet_name)
+
 
 
 
