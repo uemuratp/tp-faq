@@ -18,13 +18,18 @@ def get_worksheet(sheet_name):
     creds_info = None
     spreadsheet_id = None
 
-    # Cloud (secrets にキーがあるか)
-    if "GOOGLE_CREDENTIALS" in st.secrets and "SPREADSHEET_ID" in st.secrets:
-        try:
+    try:
+        # Cloud 環境用（secrets にキーが存在するか判定してから使う）
+        if "GOOGLE_CREDENTIALS" in st.secrets and "SPREADSHEET_ID" in st.secrets:
             creds_info = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
             spreadsheet_id = st.secrets["SPREADSHEET_ID"]
-        except:
-            pass  # ログ表示なしでスルー
+    except json.JSONDecodeError as e:
+        # JSON読み込みだけ失敗した場合（構文エラーなど）
+        st.error(f"GOOGLE_CREDENTIALS の JSON 構文エラー: {e}")
+        st.stop()
+    except Exception as e:
+        # 他の異常系（不要なら非表示でも可）
+        pass  # または st.warning(f"Cloud認証エラー: {e}")
 
     # ローカル fallback
     if creds_info is None:
@@ -37,7 +42,6 @@ def get_worksheet(sheet_name):
             st.error("認証情報が見つかりません（Cloud secrets または toumei/credentials.json）。")
             st.stop()
 
-    # Google API認証
     SCOPES = [
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive'
@@ -51,10 +55,6 @@ def get_worksheet(sheet_name):
 
     spreadsheet = gc.open_by_key(spreadsheet_id)
     return spreadsheet.worksheet(sheet_name)
-
-
-
-
 
 
 
