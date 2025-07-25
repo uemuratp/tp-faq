@@ -12,50 +12,45 @@ import json
 # -------------------------------
 # 🔐 Googleスプレッドシート認証
 # -------------------------------
-
-
-import os
-import json
-import gspread
-import streamlit as st
-from google.oauth2.service_account import Credentials
-
 @st.cache_resource
 def get_worksheet(sheet_name):
-    try:
-        # ✅ 本番用：Secretsから読み込み（Cloud環境）
-        creds_info = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
-        spreadsheet_id = st.secrets["SPREADSHEET_ID"]
+    creds_info = None
+    spreadsheet_id = None
 
-    except Exception as e:
-        st.error(f"Cloud認証の読み込み失敗: {e}")
+    # Cloud (secrets にキーがあるか)
+    if "GOOGLE_CREDENTIALS" in st.secrets and "SPREADSHEET_ID" in st.secrets:
+        try:
+            creds_info = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+            spreadsheet_id = st.secrets["SPREADSHEET_ID"]
+        except:
+            pass  # ログ表示なしでスルー
 
-        # 🔁 ローカル環境 fallback（toumei/credentials.json）
+    # ローカル fallback
+    if creds_info is None:
         local_path = os.path.join("toumei", "credentials.json")
         if os.path.exists(local_path):
             with open(local_path, "r", encoding="utf-8") as f:
                 creds_info = json.load(f)
                 spreadsheet_id = creds_info.get("spreadsheet_id", "")
         else:
-            st.error("認証情報が見つかりません。Cloudでは secrets、ローカルでは toumei/credentials.json を確認してください。")
+            st.error("認証情報が見つかりません（Cloud secrets または toumei/credentials.json）。")
             st.stop()
 
-    # Google API スコープ設定
+    # Google API認証
     SCOPES = [
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive'
     ]
-
-    # 認証クレデンシャル作成
     creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
     gc = gspread.authorize(creds)
 
     if not spreadsheet_id:
-        st.error("スプレッドシートIDが見つかりません。")
+        st.error("スプレッドシートIDが指定されていません。")
         st.stop()
 
     spreadsheet = gc.open_by_key(spreadsheet_id)
     return spreadsheet.worksheet(sheet_name)
+
 
 
 
