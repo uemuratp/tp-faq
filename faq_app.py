@@ -20,39 +20,27 @@ from google.oauth2.service_account import Credentials
 
 @st.cache_resource
 def get_worksheet(sheet_name):
-    # ① 認証情報の読み込み（Streamlit Cloud または ローカル）
     try:
-        # ✅ Streamlit Cloud（secrets）優先
-        creds_info = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
-        spreadsheet_id = st.secrets["SPREADSHEET_ID"]
-    except Exception:
-        # 🔁 ローカル環境 fallback
-        local_path = os.path.join("toumei", "credentials.json")
-        if os.path.exists(local_path):
-            with open(local_path, "r", encoding="utf-8") as f:
-                creds_info = json.load(f)
-                spreadsheet_id = creds_info.get("spreadsheet_id", "")
-        else:
-            st.error("認証情報が見つかりません。Cloudでは secrets、ローカルでは toumei/credentials.json を確認してください。")
+        # 🔍 登録されている secrets キー一覧を表示
+        st.write("登録されている secrets キー一覧:", list(st.secrets.keys()))
+        
+        # 🔍 GOOGLE_CREDENTIALS が存在するか確認
+        if "GOOGLE_CREDENTIALS" not in st.secrets:
+            st.error("GOOGLE_CREDENTIALS が secrets に存在しません！")
             st.stop()
 
-    # ② Google API スコープ設定
-    SCOPES = [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive'
-    ]
+        creds_raw = st.secrets["GOOGLE_CREDENTIALS"]
+        st.text("GOOGLE_CREDENTIALS（先頭100文字）:")
+        st.text(creds_raw[:100])  # 長すぎないように一部表示
 
-    # ③ 認証クレデンシャル作成とシート接続
-    creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
-    gc = gspread.authorize(creds)
+        # 🔍 JSONとして読み込めるか確認
+        creds_info = json.loads(creds_raw)
 
-    if not spreadsheet_id:
-        st.error("スプレッドシートIDが見つかりません。Cloudでは secrets、ローカルでは credentials.json に 'spreadsheet_id' を追加してください。")
-        st.stop()
-
-    spreadsheet = gc.open_by_key(spreadsheet_id)
-    return spreadsheet.worksheet(sheet_name)
-
+        # 🔍 SPREADSHEET_ID も確認
+        if "SPREADSHEET_ID" not in st.secrets:
+            st.error("SPREADSHEET_ID が secrets に存在しません！")
+            st.stop()
+        spreadsheet_id = st.secrets["SPREADSHEET_ID"]
 
 
 
