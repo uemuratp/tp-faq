@@ -13,48 +13,76 @@ from google.oauth2.service_account import Credentials
 # -------------------------------
 # 🔐 Googleスプレッドシート認証
 # -------------------------------
+
+import streamlit as st
+import os
+import json
+import gspread
+from google.oauth2.service_account import Credentials
+
 @st.cache_resource
 def get_worksheet(sheet_name):
     creds_info = None
     spreadsheet_id = None
 
+    # ✅ 1. Cloud環境：secrets.toml 優先
     try:
-        # Cloud 環境用（secrets にキーが存在するか判定してから使う）
         if "GOOGLE_CREDENTIALS" in st.secrets and "SPREADSHEET_ID" in st.secrets:
             creds_info = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
             spreadsheet_id = st.secrets["SPREADSHEET_ID"]
     except json.JSONDecodeError as e:
-        # JSON読み込みだけ失敗した場合（構文エラーなど）
-        st.error(f"GOOGLE_CREDENTIALS の JSON 構文エラー: {e}")
+        st.error(f"❌ Cloud secrets の JSON 構文エラー: {e}")
         st.stop()
     except Exception as e:
-        # 他の異常系（不要なら非表示でも可）
-        pass  # または st.warning(f"Cloud認証エラー: {e}")
+        st.warning(f"⚠️ Cloud secrets の読み込み失敗: {e}")
 
-    # ローカル fallback
+    # ✅ 2. ローカル環境 fallback（toumei/credentials.json）
     if creds_info is None:
-        local_path = os.path.join("toumei", "credentials.json")
-        if os.path.exists(local_path):
+        try:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            local_path = os.path.join(script_dir, "toumei", "credentials.json")
+
             with open(local_path, "r", encoding="utf-8") as f:
                 creds_info = json.load(f)
-                spreadsheet_id = creds_info.get("spreadsheet_id", "")
-        else:
-            st.error("認証情報が見つかりません（Cloud secrets または toumei/credentials.json）。")
+                spreadsheet_id = creds_info.get("spreadsheet_id")
+
+        except FileNotFoundError:
+            st.error("❌ 認証ファイルが見つかりません（toumei/credentials.json）")
+            st.stop()
+        except json.JSONDecodeError as e:
+            st.error(f"❌ credentials.json の JSON構文エラー: {e}")
+            st.stop()
+        except Exception as e:
+            st.error(f"❌ ローカル認証情報の読み込み失敗: {e}")
             st.stop()
 
-    SCOPES = [
-        'https://www.googleapis.com/auth/spreadsheets',
-        'https://www.googleapis.com/auth/drive'
-    ]
-    creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
-    gc = gspread.authorize(creds)
-
-    if not spreadsheet_id:
-        st.error("スプレッドシートIDが指定されていません。")
+    # ✅ 3. 認証処理
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds = Credentials.from_service_account_info(creds_info, scopes=scopes)
+        gc = gspread.authorize(creds)
+    except Exception as e:
+        st.error(f"❌ 認証情報の読み取りに失敗しました（PEMエラーなど）: {e}")
         st.stop()
 
-    spreadsheet = gc.open_by_key(spreadsheet_id)
-    return spreadsheet.worksheet(sheet_name)
+    # ✅ 4. スプレッドシート取得
+    if not spreadsheet_id:
+        st.error("❌ スプレッドシートIDが見つかりません（secrets または credentials.json に必要）")
+        st.stop()
+
+    try:
+        spreadsheet = gc.open_by_key(spreadsheet_id)
+        return spreadsheet.worksheet(sheet_name)
+    except Exception as e:
+        st.error(f"❌ スプレッドシート「{sheet_name}」の読み込み失敗: {e}")
+        st.stop()
+
+
+
+
 
 
 
@@ -193,15 +221,18 @@ def search_ui(faqs, clear_query=False):
             st.session_state.search_results = results
             st.session_state.selected_faq_index = None
             st.session_state.show_all_questions = False
-            st.session_state.query = query
-            st.session_state.search_mode = search_mode
+
+            # ✅ エラーを防ぐために以下は削除
+            # st.session_state.query = query
+            # st.session_state.search_mode = search_mode
 
             if not keywords:
                 st.warning("検索キーワードを入力してください。")
             elif not results:
                 st.info("該当するFAQはありません。")
                 if "selected_category" in st.session_state:
-                    log_no_hit(st.session_state.selected_category, query)  # ✨ ログ保存機能を追加
+                    log_no_hit(st.session_state.selected_category, query)
+
             st.rerun()
 
     with col2:
@@ -211,6 +242,7 @@ def search_ui(faqs, clear_query=False):
             st.session_state.show_all_questions = True
             st.session_state.page = "list"
             st.rerun()
+
 
 
 def render_home(faqs):
