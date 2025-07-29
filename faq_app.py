@@ -417,8 +417,7 @@ def render_patrol(df):
             submitted = st.form_submit_button("検索")
 
         if submitted:
-            keywords = [''.join(normalize_seion(c) for c in converter.do(k)) for k in query.lower().split() if len(k) >= 2]
-            st.session_state.page = "search"
+            keywords = [k for k in query.lower().split() if len(k) >= 2]
             results = []
             for _, row in df.iterrows():
                 related_words_raw = [w.strip().lower() for w in row.get('関連ワード', '').split(',') if w.strip()]
@@ -442,10 +441,19 @@ def render_patrol(df):
                         '対応': row.get('対応', '')
                     })
 
+            if not results:
+                st.info("該当するパト指摘事項は見つかりませんでした。")
+                if query:
+                    log_no_hit("パト指摘事項", query)
+
             st.session_state.search_results = results
             st.session_state.query = query
             st.session_state.search_mode = search_mode
+            st.session_state.page = "search"
             st.rerun()
+
+    # 以下に一覧・詳細ページ処理が続く（省略）
+
 
 
 
@@ -606,7 +614,7 @@ def render_trouble(df):
 
     if st.session_state.page != "trouble_detail":
         with st.form(key="trouble_search_form"):
-            query = st.text_input("🔍 設備名(大項目)・機器名(中項目)・詳細機器名(小項目)・トラブル内容・現場名で検索", value=st.session_state.get("query", ""))
+            query = st.text_input("🔍 設備名・トラブル内容・対処・カテゴリ・現場名・備考で検索", value=st.session_state.get("query", ""))
             search_mode = st.radio("検索モードを選択してください", ('AND', 'OR'), index=('AND', 'OR').index(st.session_state.get("search_mode", "AND")))
             submitted = st.form_submit_button("検索")
 
@@ -621,6 +629,11 @@ def render_trouble(df):
                     results.append(dict(row))
                 elif search_mode == 'OR' and any(k in content for k in keywords):
                     results.append(dict(row))
+
+            if not results:
+                st.info("該当するトラブル事例は見つかりませんでした。")
+                if query:
+                    log_no_hit("トラブル事例", query)
 
             st.session_state.search_results = results
             st.session_state.query = query
@@ -723,6 +736,7 @@ def render_trouble(df):
         if st.button("🏠 ホームへ戻る"):
             st.session_state.page = "home"
             st.rerun()
+
 
 
 
