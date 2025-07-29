@@ -43,8 +43,11 @@ def get_worksheet(sheet_name):
             local_path = os.path.join(script_dir, "toumei", "credentials.json")
 
             with open(local_path, "r", encoding="utf-8") as f:
+                st.write(f.read(100))
                 creds_info = json.load(f)
                 spreadsheet_id = creds_info.get("spreadsheet_id")
+                st.write(f.read(100))
+
 
         except FileNotFoundError:
             st.error("❌ 認証ファイルが見つかりません（toumei/credentials.json）")
@@ -368,7 +371,6 @@ def render_detail(faqs):
     else:
         st.error("不正なページ状態です。")
         return
-
     if idx is not None and 0 <= idx < len(results):
         faq = results[idx]
         st.write(f"### 質問: {faq.get('質問', '')}")
@@ -397,8 +399,338 @@ def render_detail(faqs):
             st.session_state.page = "home"
             st.rerun()
 
+    
+def render_patrol(df):
+    st.write("### 🚧 パト指摘事項")
+
+    def normalize_text(text):
+        return str(text).strip().lower().replace('　', ' ').replace(' ', '')
+
+    if 'search_results' not in st.session_state:
+        st.session_state.search_results = []
+
+    if st.session_state.page != "patrol_detail":
+        # 検索フォーム
+        with st.form(key="patrol_search_form"):
+            query = st.text_input("🔍 設備名・指摘事項・対応・カテゴリで検索", value=st.session_state.get("query", ""))
+            search_mode = st.radio("検索モードを選択してください", ('AND', 'OR'), index=('AND', 'OR').index(st.session_state.get("search_mode", "AND")))
+            submitted = st.form_submit_button("検索")
+
+        if submitted:
+            keywords = [''.join(normalize_seion(c) for c in converter.do(k)) for k in query.lower().split() if len(k) >= 2]
+            st.session_state.page = "search"
+            results = []
+            for _, row in df.iterrows():
+                related_words_raw = [w.strip().lower() for w in row.get('関連ワード', '').split(',') if w.strip()]
+                related_words = [''.join(normalize_seion(c) for c in converter.do(w)) for w in related_words_raw]
+                raw_text = f"{row.get('設備名', '')} {row.get('指摘事項', '')} {row.get('対応', '')} {row.get('カテゴリ', '')}".lower()
+                combined = ''.join(normalize_seion(c) for c in converter.do(raw_text))
+                content = combined + " " + " ".join(related_words)
+
+                if search_mode == 'AND' and all(k in content for k in keywords):
+                    results.append({
+                        '設備名': row.get('設備名', ''),
+                        'カテゴリ': row.get('カテゴリ', ''),
+                        '指摘事項': row.get('指摘事項', ''),
+                        '対応': row.get('対応', '')
+                    })
+                elif search_mode == 'OR' and any(k in content for k in keywords):
+                    results.append({
+                        '設備名': row.get('設備名', ''),
+                        'カテゴリ': row.get('カテゴリ', ''),
+                        '指摘事項': row.get('指摘事項', ''),
+                        '対応': row.get('対応', '')
+                    })
+
+            st.session_state.search_results = results
+            st.session_state.query = query
+            st.session_state.search_mode = search_mode
+            st.rerun()
+
+
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📋 設備名一覧"):
+            st.session_state.page = "patrol"
+            st.session_state.search_results = []
+            st.rerun()
+    with col2:
+        if st.button("📋 カテゴリ一覧"):
+            st.session_state.page = "patrol_category"
+            st.session_state.search_results = []
+            st.rerun()
+
+    # 検索結果表示（5）
+    if st.session_state.search_results and st.session_state.page == "search":
+        st.write("### 🔍 検索結果")
+        seen = set()
+        unique_results = []
+        for row in st.session_state.search_results:
+            key = (row['設備名'], row['カテゴリ'])
+            if key not in seen:
+                seen.add(key)
+                unique_results.append(row)
+
+        cols = st.columns(4)
+        for i, row in enumerate(unique_results):
+            match_rows = [r for r in st.session_state.search_results if r['設備名'] == row['設備名'] and r['カテゴリ'] == row['カテゴリ']]
+            label = f"{row['設備名']} / {row['カテゴリ']} / {len(match_rows)}件"
+            col = cols[i % 4]
+            with col:
+                if st.button(label, key=f"patrol_result_{i}"):
+                    st.session_state.selected_equipment_norm = normalize_text(row['設備名'])
+                    st.session_state.selected_equipment_name = row['設備名']
+                    st.session_state.selected_patrol_note = row['カテゴリ']
+                    st.session_state.page = "patrol_detail"
+                    st.rerun()
+
+    # 設備名一覧ページ（1）
+    if st.session_state.page == "patrol":
+        equipment_map = {}
+        equipment_groups = {}
+        for name in df['設備名']:
+            norm = normalize_text(name)
+            if norm not in equipment_map:
+                equipment_map[norm] = name
+        for _, row in df.iterrows():
+            norm = normalize_text(row['設備名'])
+            if norm not in equipment_groups:
+                equipment_groups[norm] = []
+            equipment_groups[norm].append(row)
+
+        keys = sorted(equipment_map.items(), key=lambda x: len(equipment_groups[x[0]]), reverse=True)
+        cols = st.columns(4)
+        for i, (norm_key, original_name) in enumerate(keys):
+            count = len(equipment_groups[norm_key])
+            col = cols[i % 4]
+            with col:
+                if st.button(f"{original_name} / {count}件", key=f"equipment_{norm_key}"):
+                    st.session_state.selected_equipment_norm = norm_key
+                    st.session_state.selected_equipment_name = original_name
+                    st.session_state.page = "patrol_note"
+                    st.rerun()
+
+    # カテゴリ一覧ページ（3）
+    elif st.session_state.page == "patrol_category":
+        categories = sorted(set(df['カテゴリ']), key=lambda c: len(df[df['カテゴリ'] == c]), reverse=True)
+        cols = st.columns(4)
+        for i, cat in enumerate(categories):
+            count = len(df[df['カテゴリ'] == cat])
+            label = f"{cat or '(カテゴリなし)'} / {count}件"
+            col = cols[i % 4]
+            with col:
+                if st.button(label, key=f"cat_{cat}"):
+                    st.session_state.selected_patrol_note = cat
+                    st.session_state.page = "patrol_category_equipment"
+                    st.rerun()
+
+    # カテゴリ→設備一覧（4）
+    elif st.session_state.page == "patrol_category_equipment":
+        selected_note = st.session_state.selected_patrol_note
+        rows = df[df['カテゴリ'] == selected_note]
+        equipment_counts = rows['設備名'].value_counts()
+        equipment_set = list(equipment_counts.index)
+        st.markdown(f"### 「{selected_note}」に含まれる設備一覧")
+        cols = st.columns(4)
+        for i, eq in enumerate(equipment_set):
+            count = len(rows[rows['設備名'] == eq])
+            col = cols[i % 4]
+            with col:
+                if st.button(f"{eq} / {count}件", key=f"cat_eq_{eq}"):
+                    st.session_state.selected_equipment_name = eq
+                    st.session_state.selected_equipment_norm = normalize_text(eq)
+                    st.session_state.page = "patrol_detail"
+                    st.rerun()
+        if st.button("🔙 カテゴリ一覧に戻る"):
+            st.session_state.page = "patrol_category"
+            st.rerun()
+
+    # 設備→カテゴリ一覧（2）
+    elif st.session_state.page == "patrol_note":
+        norm_key = st.session_state.selected_equipment_norm
+        equipment_name = st.session_state.selected_equipment_name
+        rows = [r for _, r in df.iterrows() if normalize_text(r['設備名']) == norm_key]
+        notes = {}
+        for row in rows:
+            note = row['カテゴリ']
+            if note not in notes:
+                notes[note] = []
+            notes[note].append(row)
+        st.markdown(f"### 「{equipment_name}」のカテゴリ一覧")
+        cols = st.columns(4)
+        sorted_notes = sorted(notes.items(), key=lambda item: len(item[1]), reverse=True)
+        for i, (note, note_rows) in enumerate(sorted_notes):
+            count = len(notes[note])
+            col = cols[i % 4]
+            with col:
+                if st.button(f"{note or '(カテゴリなし)'} / {count}件", key=f"note_{note}"):
+                    st.session_state.selected_patrol_note = note
+                    st.session_state.page = "patrol_detail"
+                    st.rerun()
+        if st.button("🔙 設備一覧に戻る"):
+            st.session_state.page = "patrol"
+            st.rerun()
+
+    # 詳細ページ
+    elif st.session_state.page == "patrol_detail":
+        norm_key = st.session_state.selected_equipment_norm
+        equipment_name = st.session_state.selected_equipment_name
+        selected_note = st.session_state.selected_patrol_note
+        rows = [r for _, r in df.iterrows() if normalize_text(r['設備名']) == norm_key and r['カテゴリ'] == selected_note]
+        st.markdown(f"### 詳細（設備名: {equipment_name}、カテゴリ: {selected_note}）")
+        st.info(f"該当件数: {len(rows)} 件")
+        for r in rows:
+            st.markdown(f"- **指摘事項**: {r['指摘事項']}")
+            st.markdown(f"  **対応**: {r['対応']}")
+            st.markdown("---")
+        if st.button("🔙 戻る"):
+            prev_page = st.session_state.get("previous_page", "patrol")
+            st.session_state.page = prev_page
+            st.rerun()
+        if st.button("🏠 ホームへ戻る"):
+            st.session_state.page = "home"
+            st.rerun()
+
+def render_trouble(df):
+    st.write("### ⚠️ トラブル事例")
+
+    def normalize_text(text):
+        return str(text).strip().lower().replace('　', ' ').replace(' ', '')
+
+    def display_value(value, default_label):
+        return value if str(value).strip() else default_label
+
+    if 'search_results' not in st.session_state:
+        st.session_state.search_results = []
+
+    if st.session_state.page != "trouble_detail":
+        with st.form(key="trouble_search_form"):
+            query = st.text_input("🔍 設備名(大項目)・機器名(中項目)・詳細機器名(小項目)・トラブル内容・現場名で検索", value=st.session_state.get("query", ""))
+            search_mode = st.radio("検索モードを選択してください", ('AND', 'OR'), index=('AND', 'OR').index(st.session_state.get("search_mode", "AND")))
+            submitted = st.form_submit_button("検索")
+
+        if submitted:
+            keywords = [''.join(normalize_seion(c) for c in converter.do(k)) for k in query.lower().split() if len(k) >= 2]
+            st.session_state.page = "trouble_search"
+            results = []
+            for _, row in df.iterrows():
+                raw_text = f"{row.get('設備名', '')} {row.get('トラブル内容', '')} {row.get('対処', '')} {row.get('カテゴリ', '')} {row.get('現場名', '')} {row.get('詳細機器名', '')}".lower()
+                content = ''.join(normalize_seion(c) for c in converter.do(raw_text))
+                if search_mode == 'AND' and all(k in content for k in keywords):
+                    results.append(dict(row))
+                elif search_mode == 'OR' and any(k in content for k in keywords):
+                    results.append(dict(row))
+
+            st.session_state.search_results = results
+            st.session_state.query = query
+            st.session_state.search_mode = search_mode
+            st.rerun()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📋 現場名一覧"):
+            st.session_state.page = "trouble_site_list"
+            st.session_state.search_results = []
+            st.rerun()
+    with col2:
+        if st.button("📋 カテゴリ一覧"):
+            st.session_state.page = "trouble_category_list"
+            st.session_state.search_results = []
+            st.rerun()
+
+    if st.session_state.page == "trouble_category_list":
+        categories = sorted(set(display_value(c, "カテゴリ登録なし") for c in df['カテゴリ']))
+        cols = st.columns(4)
+        for i, cat in enumerate(categories):
+            count = len(df[df['カテゴリ'].fillna('').apply(lambda x: display_value(x, "カテゴリ登録なし")) == cat])
+            col = cols[i % 4]
+            with col:
+                if st.button(f"{cat} / {count}件", key=f"trouble_cat_{cat}"):
+                    st.session_state.selected_trouble_category = cat
+                    st.session_state.page = "trouble_category_detail"
+                    st.rerun()
+
+    elif st.session_state.page == "trouble_category_detail":
+        selected_cat = st.session_state.selected_trouble_category
+        rows = df[df['カテゴリ'].fillna('').apply(lambda x: display_value(x, "カテゴリ登録なし")) == selected_cat]
+        grouped = rows.groupby(['現場名', '設備名'])
+        st.markdown(f"### 「{selected_cat}」に含まれる事例")
+        cols = st.columns(4)
+        for i, ((site, eq), group) in enumerate(grouped):
+            site_label = display_value(site, "現場名登録なし")
+            eq_label = display_value(eq, "設備名なし")
+            label = f"{site_label} / {eq_label} / {len(group)}件"
+            col = cols[i % 4]
+            with col:
+                if st.button(label, key=f"trouble_detail_btn_{site}_{eq}"):
+                    st.session_state.selected_site = site
+                    st.session_state.selected_equipment = eq
+                    st.session_state.selected_trouble_category = selected_cat
+                    st.session_state.page = "trouble_detail"
+                    st.rerun()
+
+    elif st.session_state.page == "trouble_site_list":
+        sites = sorted(set(display_value(s, "現場名登録なし") for s in df['現場名']))
+        cols = st.columns(4)
+        for i, site in enumerate(sites):
+            count = len(df[df['現場名'].fillna('').apply(lambda x: display_value(x, "現場名登録なし")) == site])
+            col = cols[i % 4]
+            with col:
+                if st.button(f"{site} / {count}件", key=f"trouble_site_{site}"):
+                    st.session_state.selected_trouble_site = site
+                    st.session_state.page = "trouble_site_detail"
+                    st.rerun()
+
+    elif st.session_state.page == "trouble_site_detail":
+        site = st.session_state.selected_trouble_site
+        rows = df[df['現場名'].fillna('').apply(lambda x: display_value(x, "現場名登録なし")) == site]
+        grouped = rows.groupby(['現場名', '設備名'])
+        st.markdown(f"### 「{site}」に含まれる事例")
+        cols = st.columns(4)
+        for i, ((site, eq), group) in enumerate(grouped):
+            site_label = display_value(site, "現場名登録なし")
+            eq_label = display_value(eq, "設備名なし")
+            label = f"{site_label} / {eq_label} / {len(group)}件"
+            col = cols[i % 4]
+            with col:
+                if st.button(label, key=f"trouble_detail_btn_site_{site}_{eq}"):
+                    st.session_state.selected_site = site
+                    st.session_state.selected_equipment = eq
+                    st.session_state.selected_trouble_category = group.iloc[0]['カテゴリ'] if 'カテゴリ' in group.columns else ''
+                    st.session_state.page = "trouble_detail"
+                    st.rerun()
+
+    elif st.session_state.page == "trouble_detail":
+        site = display_value(st.session_state.selected_site, "現場名登録なし")
+        eq = display_value(st.session_state.selected_equipment, "設備名なし")
+        cat = display_value(st.session_state.selected_trouble_category, "カテゴリ登録なし")
+        rows = df[(df['現場名'].fillna('').apply(lambda x: display_value(x, "現場名登録なし")) == site) &
+                  (df['設備名'].fillna('').apply(lambda x: display_value(x, "設備名なし")) == eq) &
+                  (df['カテゴリ'].fillna('').apply(lambda x: display_value(x, "カテゴリ登録なし")) == cat)]
+        st.markdown(f"### 詳細（現場名: {site}、設備名: {eq}、カテゴリ: {cat}）")
+        st.info(f"該当件数: {len(rows)} 件")
+        for r in rows.to_dict(orient='records'):
+            st.markdown(f"- **詳細機器名**: {display_value(r.get('詳細機器名', ''), '詳細機器名なし')}")
+            st.markdown(f"  **トラブル内容**: {display_value(r.get('トラブル内容', ''), 'トラブル内容なし')}")
+            st.markdown(f"  **対処**: {display_value(r.get('対処', ''), '対処なし')}")
+            st.markdown("---")
+
+        if st.button("🔙 戻る"):
+            prev_page = st.session_state.get("previous_page", "trouble_category_detail")
+            st.session_state.page = prev_page
+            st.rerun()
+        if st.button("🏠 ホームへ戻る"):
+            st.session_state.page = "home"
+            st.rerun()
+
+
+
+
+
+    
 def main():
-    st.title("📚 FAQ検索（スプレッドシート対応）")
+    st.title("📚 FAQ検索")
     check_password()
     if not st.session_state.authenticated:
         return
@@ -417,32 +749,53 @@ def main():
     if 'search_mode' not in st.session_state:
         st.session_state.search_mode = "AND"
 
-    # カテゴリ選択（スプレッドシートのシート名と一致）
-    categories = ["工事関係", "事務関係", "その他"]
+    # ✅ ① カテゴリ選択（スプレッドシートのシート名と一致）
+    categories = ["工事関係", "事務関係", "その他", "パト指摘事項", "トラブル事例"]
     selected_category = st.selectbox("カテゴリを選択してください", categories)
-    st.session_state.selected_category = selected_category  # ← ✅ セッションに保存（必要）
+    st.session_state.selected_category = selected_category  # ← log記録にも必要
 
+    # ✅ ② カテゴリに応じてデータ読み込み
     try:
-        faqs = load_faq_from_sheet(selected_category)
+        if selected_category in ["工事関係", "事務関係", "その他"]:
+            faqs = load_faq_from_sheet(selected_category)
+            st.session_state.category_type = "faq"
+        elif selected_category == "パト指摘事項":
+            df = get_as_dataframe(get_worksheet("パト指摘事項")).fillna('')
+            st.session_state.category_type = "patrol"
+        elif selected_category == "トラブル事例":
+            df = get_as_dataframe(get_worksheet("トラブル事例")).fillna('')
+            st.session_state.category_type = "trouble"
+        else:
+            st.error("未対応のカテゴリです。")
+            return
     except Exception as e:
-        st.error(f"FAQの読み込みに失敗しました: {e}")
+        st.error(f"データ読み込みに失敗しました: {e}")
         return
 
-    # 現在のページに応じた描画
-    if st.session_state.page == "home":
-        render_home(faqs)
-    elif st.session_state.page == "list":
-        render_list(faqs)
-    elif st.session_state.page == "gojuon":
-        render_gojuon(faqs)
-    elif st.session_state.page == "gojuon_list":
-        render_gojuon_list(faqs)
-    elif st.session_state.page in ("detail", "detail_gojuon"):
-        render_detail(faqs)
-    else:
-        st.session_state.page = "home"
-        st.rerun()
+    # ✅ ③ ページ遷移処理
+    if st.session_state.category_type == "faq":
+        if st.session_state.page == "home":
+            render_home(faqs)
+        elif st.session_state.page == "list":
+            render_list(faqs)
+        elif st.session_state.page == "gojuon":
+            render_gojuon(faqs)
+        elif st.session_state.page == "gojuon_list":
+            render_gojuon_list(faqs)
+        elif st.session_state.page in ("detail", "detail_gojuon"):
+            render_detail(faqs)
+        else:
+            st.session_state.page = "home"
+            st.rerun()
+
+    elif st.session_state.category_type == "patrol":
+        render_patrol(df)
+
+    elif st.session_state.category_type == "trouble":
+        render_trouble(df)
+
 
 if __name__ == "__main__":
     main()
+
 
