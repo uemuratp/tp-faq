@@ -609,6 +609,9 @@ def render_trouble(df):
     def display_value(value, default_label):
         return value if str(value).strip() else default_label
 
+    def trigger_rerun():
+        st.rerun()
+
     if 'search_results' not in st.session_state:
         st.session_state.search_results = []
 
@@ -640,7 +643,7 @@ def render_trouble(df):
             st.session_state.search_mode = search_mode
             st.rerun()
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("📋 現場名一覧"):
             st.session_state.page = "trouble_site_list"
@@ -651,18 +654,104 @@ def render_trouble(df):
             st.session_state.page = "trouble_category_list"
             st.session_state.search_results = []
             st.rerun()
+    with col3:
+        if st.button("📝 登録"):
+            st.session_state.page = "trouble_register"
+            st.rerun()
 
-    if st.session_state.page == "trouble_category_list":
-        categories = sorted(set(display_value(c, "カテゴリ登録なし") for c in df['カテゴリ']))
-        cols = st.columns(4)
-        for i, cat in enumerate(categories):
-            count = len(df[df['カテゴリ'].fillna('').apply(lambda x: display_value(x, "カテゴリ登録なし")) == cat])
-            col = cols[i % 4]
-            with col:
-                if st.button(f"{cat} / {count}件", key=f"trouble_cat_{cat}"):
-                    st.session_state.selected_trouble_category = cat
-                    st.session_state.page = "trouble_category_detail"
+    if st.session_state.page == "trouble_register":
+        st.write("### 📝 トラブル事例 登録フォーム")
+
+        st.markdown("#### 現場名")
+        site_input = st.text_input("現場名を入力または選択", value=st.session_state.get("site_input", ""), placeholder="新規登録。登録済の場合は↓から選択してください。", label_visibility="collapsed", key="site_input")
+        sites = sorted(set(df['現場名'].dropna().astype(str)))
+        site_select = st.selectbox("登録済のワードはこちらから選択してください。", options=[""] + sites, index=0, key="site_select_trouble", on_change=trigger_rerun)
+        site = site_select.strip() if site_select.strip() else site_input.strip()
+        st.write(f"🪛 DEBUG: site = {site}")
+
+        st.markdown("#### 設備名（大項目）")
+        eq_input = st.text_input("設備名を入力または選択", value=st.session_state.get("eq_input", ""), placeholder="新規登録。登録済の場合は↓から選択してください。", label_visibility="collapsed", key="eq_input")
+        eqs = sorted(set(df['設備名'].dropna().astype(str)))
+        eq_select = st.selectbox("登録済のワードはこちらから選択してください。", options=[""] + eqs, index=0, key="eq_select_trouble", on_change=trigger_rerun)
+        eq = eq_select.strip() if eq_select.strip() else eq_input.strip()
+        st.write(f"🪛 DEBUG: eq = {eq}")
+
+        st.markdown("#### カテゴリ（中項目）")
+        mask = pd.Series(True, index=df.index)
+        if site:
+            mask &= df['現場名'].astype(str).apply(normalize_text) == normalize_text(site)
+        if eq:
+            mask &= df['設備名'].astype(str).apply(normalize_text) == normalize_text(eq)
+        cat_df = df[mask]
+        cats = sorted(set(cat_df['カテゴリ'].dropna().astype(str)))
+        st.write(f"🪛 DEBUG: mask category hit count = {len(cat_df)}")
+        cat_input = st.text_input("カテゴリを入力または選択", value=st.session_state.get("cat_input", ""), placeholder="新規登録。登録済の場合は↓から選択してください。", label_visibility="collapsed", key="cat_input")
+        cat_select = st.selectbox("登録済のワードはこちらから選択してください。", options=[""] + cats, index=0, key="cat_select_trouble", on_change=trigger_rerun)
+        category = cat_select.strip() if cat_select.strip() else cat_input.strip()
+        st.write(f"🪛 DEBUG: category = {category}")
+
+        st.markdown("#### 詳細機器名（小項目）")
+        mask2 = pd.Series(True, index=df.index)
+        if site:
+            mask2 &= df['現場名'].astype(str).apply(normalize_text) == normalize_text(site)
+        if eq:
+            mask2 &= df['設備名'].astype(str).apply(normalize_text) == normalize_text(eq)
+        if category:
+            mask2 &= df['カテゴリ'].astype(str).apply(normalize_text) == normalize_text(category)
+        detail_df = df[mask2]
+        st.write(f"🪛 DEBUG: mask2 detail hit count = {len(detail_df)}")
+        details = sorted(set(detail_df['詳細機器名'].dropna().astype(str)))
+        detail_input = st.text_input("詳細機器名", placeholder="正式名称推奨", label_visibility="collapsed", key="detail_input")
+        detail_select = st.selectbox("登録済のワードはこちらから選択してください。", options=[""] + details, index=0, key="detail_select_trouble", on_change=trigger_rerun)
+        detail = detail_select.strip() if detail_select.strip() else detail_input.strip()
+
+        st.markdown("#### トラブル内容")
+        content = st.text_area("トラブル内容")
+
+        st.markdown("#### 対処")
+        response = st.text_area("対処")
+
+        if st.button("登録する"):
+            try:
+                worksheet = get_worksheet("トラブル事例")
+                worksheet.append_row([site, eq, detail, content, response, category])
+                st.success("トラブル事例を登録しました。")
+                if st.button("🏠 ホームへ戻る"):
+                    st.session_state.page = "home"
                     st.rerun()
+            except Exception as e:
+                st.error(f"登録に失敗しました: {e}")
+        return
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # 以降、既存のカテゴリ・現場一覧・詳細処理が続く（省略）
+
+
+
+
+
+
+
+
 
     elif st.session_state.page == "trouble_category_detail":
         selected_cat = st.session_state.selected_trouble_category
