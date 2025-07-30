@@ -418,22 +418,30 @@ def render_patrol(df):
 
         if submitted:
             keywords = [k for k in query.lower().split() if len(k) >= 2]
+            normalized_keywords = [''.join(normalize_seion(c) for c in converter.do(k)) for k in keywords]
+
             results = []
             for _, row in df.iterrows():
+                # 原文テキスト（漢字含む）
+                original_text = f"{row.get('設備名', '')} {row.get('指摘事項', '')} {row.get('対応', '')} {row.get('カテゴリ', '')}".lower()
+                # 正規化テキスト（ひらがな化＋濁音正規化）
+                normalized_text = ''.join(normalize_seion(c) for c in converter.do(original_text))
+
+                # 関連ワード（正規化）
                 related_words_raw = [w.strip().lower() for w in row.get('関連ワード', '').split(',') if w.strip()]
                 related_words = [''.join(normalize_seion(c) for c in converter.do(w)) for w in related_words_raw]
-                raw_text = f"{row.get('設備名', '')} {row.get('指摘事項', '')} {row.get('対応', '')} {row.get('カテゴリ', '')}".lower()
-                combined = ''.join(normalize_seion(c) for c in converter.do(raw_text))
-                content = combined + " " + " ".join(related_words)
 
-                if search_mode == 'AND' and all(k in content for k in keywords):
+                # 比較対象文字列：原文と正規化文字列を両方含む
+                combined_content = original_text + " " + normalized_text + " " + " ".join(related_words)
+
+                if search_mode == 'AND' and all((k in combined_content or nk in combined_content) for k, nk in zip(keywords, normalized_keywords)):
                     results.append({
                         '設備名': row.get('設備名', ''),
                         'カテゴリ': row.get('カテゴリ', ''),
                         '指摘事項': row.get('指摘事項', ''),
                         '対応': row.get('対応', '')
                     })
-                elif search_mode == 'OR' and any(k in content for k in keywords):
+                elif search_mode == 'OR' and any((k in combined_content or nk in combined_content) for k, nk in zip(keywords, normalized_keywords)):
                     results.append({
                         '設備名': row.get('設備名', ''),
                         'カテゴリ': row.get('カテゴリ', ''),
@@ -453,9 +461,6 @@ def render_patrol(df):
             st.rerun()
 
     # 以下に一覧・詳細ページ処理が続く（省略）
-
-
-
 
     col1, col2 = st.columns(2)
     with col1:
@@ -490,8 +495,12 @@ def render_patrol(df):
                     st.session_state.selected_equipment_norm = normalize_text(row['設備名'])
                     st.session_state.selected_equipment_name = row['設備名']
                     st.session_state.selected_patrol_note = row['カテゴリ']
+                    st.session_state.filtered_rows = match_rows  # 検索ヒットのみ保存
                     st.session_state.page = "patrol_detail"
                     st.rerun()
+
+    # 以降の処理は省略（元のまま）
+
 
     # 設備名一覧ページ（1）
     if st.session_state.page == "patrol":
@@ -585,7 +594,10 @@ def render_patrol(df):
         norm_key = st.session_state.selected_equipment_norm
         equipment_name = st.session_state.selected_equipment_name
         selected_note = st.session_state.selected_patrol_note
-        rows = [r for _, r in df.iterrows() if normalize_text(r['設備名']) == norm_key and r['カテゴリ'] == selected_note]
+        rows = st.session_state.get("filtered_rows")
+        if rows is None:
+            rows = [r for _, r in df.iterrows() if normalize_text(r['設備名']) == norm_key and r['カテゴリ'] == selected_note]
+
         st.markdown(f"### 詳細（設備名: {equipment_name}、カテゴリ: {selected_note}）")
         st.info(f"該当件数: {len(rows)} 件")
         for r in rows:
