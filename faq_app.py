@@ -618,6 +618,7 @@ def render_trouble(df):
     def normalize_text(text):
         return str(text).strip().lower().replace('　', ' ').replace(' ', '')
 
+
     def display_value(value, default_label):
         return value if str(value).strip() else default_label
 
@@ -631,11 +632,32 @@ def render_trouble(df):
         st.session_state.search_results = []
 
     if st.session_state.page == "trouble_register_done":
+        if 'selected_trouble_category' not in st.session_state:
+            st.session_state.selected_trouble_category = ""
         st.success("トラブル事例を登録しました。")
         if st.button("🏠 ホームへ戻る"):
-            st.session_state.page = "trouble_search"
+            st.session_state.page = "trouble_search"  # ← ここを変更
             st.session_state.trouble_registered = False
             st.rerun()
+        return
+
+    if st.session_state.page == "trouble_category_detail":
+        selected_cat = st.session_state.selected_trouble_category
+        rows = df[df['カテゴリ'].fillna('').apply(lambda x: display_value(x, "カテゴリ登録なし")) == selected_cat]
+        st.markdown(f"### 「{selected_cat}」に含まれる事例一覧")
+        if rows.empty:
+            st.info("該当するトラブル事例はありません。")
+        else:
+            for r in rows.to_dict(orient='records'):
+                st.markdown(f"- **現場名**: {display_value(r.get('現場名', ''), '現場名登録なし')}")
+                st.markdown(f"  **詳細機器名**: {display_value(r.get('詳細機器名', ''), '機器名登録なし')}")
+                st.markdown(f"  **トラブル内容**: {display_value(r.get('トラブル内容', ''), 'トラブル内容なし')}")
+                st.markdown(f"  **対処**: {display_value(r.get('対処', ''), '対処なし')}")
+                st.markdown("---")
+        if st.button("🔙 戻る"):
+            st.session_state.page = "trouble_category_list"
+            st.rerun()
+
         return
 
     if st.session_state.page == "trouble_category_list":
@@ -649,7 +671,7 @@ def render_trouble(df):
             with col:
                 if st.button(label, key=f"trouble_cat_{cat}"):
                     st.session_state.selected_trouble_category = cat
-                    st.session_state.page = "trouble_search"
+                    st.session_state.page = "trouble_category_detail"
                     st.rerun()
         if st.button("🔙 戻る", key="trouble_category_back"):
             st.session_state.page = "trouble_search"
@@ -759,15 +781,13 @@ def render_trouble(df):
             if st.button("登録する"):
                 try:
                     worksheet = get_worksheet("トラブル事例")
-                    worksheet.append_row([site, eq, detail, content, response, category])
+                    worksheet.append_row([site, eq, content, response, detail, category])
                     st.session_state.trouble_registered = True
                     st.session_state.page = "trouble_register_done"
                     st.rerun()
                 except Exception as e:
                     st.error(f"登録に失敗しました: {e}")
         return
-
-
 
 
 
