@@ -630,6 +630,32 @@ def render_trouble(df):
         st.session_state.trouble_reload_flag = False
         st.session_state.search_results = []
 
+    if st.session_state.page == "trouble_register_done":
+        st.success("トラブル事例を登録しました。")
+        if st.button("🏠 ホームへ戻る"):
+            st.session_state.page = "trouble_search"
+            st.session_state.trouble_registered = False
+            st.rerun()
+        return
+
+    if st.session_state.page == "trouble_category_list":
+        st.write("### 📋 カテゴリ一覧")
+        categories = sorted(set(df['カテゴリ'].dropna().astype(str)))
+        cols = st.columns(4)
+        for i, cat in enumerate(categories):
+            count = len(df[df['カテゴリ'] == cat])
+            label = f"{cat or '(未分類)'} / {count}件"
+            col = cols[i % 4]
+            with col:
+                if st.button(label, key=f"trouble_cat_{cat}"):
+                    st.session_state.selected_trouble_category = cat
+                    st.session_state.page = "trouble_search"
+                    st.rerun()
+        if st.button("🔙 戻る", key="trouble_category_back"):
+            st.session_state.page = "trouble_search"
+            st.rerun()
+        return
+
     if st.session_state.page != "trouble_detail":
         with st.form(key="trouble_search_form"):
             query = st.text_input("🔍 設備名・トラブル内容・対処・カテゴリ・現場名・備考で検索", value=st.session_state.get("query", ""))
@@ -637,12 +663,12 @@ def render_trouble(df):
             submitted = st.form_submit_button("検索")
 
         if submitted:
-            keywords = [''.join(normalize_seion(c) for c in converter.do(k)) for k in query.lower().split() if len(k) >= 2]
+            keywords = [''.join(normalize_text(c) for c in k) for k in query.lower().split() if len(k) >= 2]
             st.session_state.page = "trouble_search"
             results = []
             for _, row in df.iterrows():
                 raw_text = f"{row.get('設備名', '')} {row.get('トラブル内容', '')} {row.get('対処', '')} {row.get('カテゴリ', '')} {row.get('現場名', '')} {row.get('詳細機器名', '')}".lower()
-                content = ''.join(normalize_seion(c) for c in converter.do(raw_text))
+                content = ''.join(normalize_text(c) for c in raw_text)
                 if search_mode == 'AND' and all(k in content for k in keywords):
                     results.append(dict(row))
                 elif search_mode == 'OR' and any(k in content for k in keywords):
@@ -658,143 +684,88 @@ def render_trouble(df):
             st.session_state.search_mode = search_mode
             st.rerun()
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("📋 現場名一覧"):
-            st.session_state.page = "trouble_site_list"
-            st.session_state.search_results = []
-            st.rerun()
-    with col2:
-        if st.button("📋 カテゴリ一覧"):
-            st.session_state.page = "trouble_category_list"
-            st.session_state.search_results = []
-            st.rerun()
-    with col3:
-        if st.button("📝 登録"):
-            st.session_state.page = "trouble_register"
-            st.rerun()
-
-    
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("📋 現場名一覧"):
+                st.session_state.page = "trouble_site_list"
+                st.session_state.search_results = []
+                st.rerun()
+        with col2:
+            if st.button("📋 カテゴリ一覧"):
+                st.session_state.page = "trouble_category_list"
+                st.session_state.search_results = []
+                st.rerun()
+        with col3:
+            if st.button("📝 登録"):
+                st.session_state.page = "trouble_register"
+                st.rerun()
 
     if st.session_state.page == "trouble_register":
-        
         st.write("### 📝 トラブル事例 登録フォーム")
 
         st.markdown("#### 現場名")
         site_input = st.text_input("現場名を入力または選択", value=st.session_state.get("site_input", ""), placeholder="新規登録。登録済の場合は↓から選択してください。", label_visibility="collapsed", key="site_input")
         sites = sorted(set(df['現場名'].dropna().astype(str)))
         site_select = st.selectbox("登録済のワードはこちらから選択してください。", options=[""] + sites, index=0, key="site_select_trouble")
+        col_site, col_dec1 = st.columns([3, 1])
+        with col_dec1:
+            if st.button("決定", key="site_decide"):
+                st.session_state.site_input = site_input
         site = site_select.strip() if site_select.strip() else site_input.strip()
-                
-        
-        col_site_debug, col_site_button = st.columns([3, 1])
-        with col_site_debug:
-            st.write(f"選択した現場：{site}")
-        with col_site_button:
-            if st.button("決定", key="site_confirm"):
-                st.rerun()
+        st.write(f"選択した現場：{site}")
 
         st.markdown("#### 設備名（大項目）")
         eq_input = st.text_input("設備名を入力または選択", value=st.session_state.get("eq_input", ""), placeholder="新規登録。登録済の場合は↓から選択してください。", label_visibility="collapsed", key="eq_input")
         eqs = sorted(set(df['設備名'].dropna().astype(str)))
         eq_select = st.selectbox("登録済のワードはこちらから選択してください。", options=[""] + eqs, index=0, key="eq_select_trouble")
+        col_eq, col_dec2 = st.columns([3, 1])
+        with col_dec2:
+            if st.button("決定", key="eq_decide"):
+                st.session_state.eq_input = eq_input
         eq = eq_select.strip() if eq_select.strip() else eq_input.strip()
-        if st.session_state.get("trouble_reload_flag"):
-            st.session_state.trouble_reload_flag = False
-            st.rerun()
-        
-          # rerun after site selection
-        col_eq_debug, col_eq_button = st.columns([3, 1])
-        with col_eq_debug:
-            st.write(f"選択した設備：{eq}")
-        with col_eq_button:
-            if st.button("決定", key="eq_confirm"):
-                st.rerun()
+        st.write(f"選択した設備：{eq}")
 
         st.markdown("#### カテゴリ（中項目）")
-        mask = pd.Series(True, index=df.index)
-        if site:
-            mask &= df['現場名'].astype(str).apply(normalize_text) == normalize_text(site)
-        if eq:
-            mask &= df['設備名'].astype(str).apply(normalize_text) == normalize_text(eq)
-        cat_df = df[mask]
-        cats = sorted(set(cat_df['カテゴリ'].dropna().astype(str)))
-        st.write(f"登録済のカテゴリ：{len(cat_df)}件")
         cat_input = st.text_input("カテゴリを入力または選択", value=st.session_state.get("cat_input", ""), placeholder="新規登録。登録済の場合は↓から選択してください。", label_visibility="collapsed", key="cat_input")
+        cat_df = df[(df['現場名'].astype(str) == site) & (df['設備名'].astype(str) == eq)]
+        cats = sorted(set(cat_df['カテゴリ'].dropna().astype(str)))
         cat_select = st.selectbox("登録済のワードはこちらから選択してください。", options=[""] + cats, index=0, key="cat_select_trouble")
+        col_cat, col_dec3 = st.columns([3, 1])
+        with col_dec3:
+            if st.button("決定", key="cat_decide"):
+                st.session_state.cat_input = cat_input
         category = cat_select.strip() if cat_select.strip() else cat_input.strip()
-        if st.session_state.get("trouble_reload_flag"):
-            st.session_state.trouble_reload_flag = False
-            st.rerun()
-        
-        if st.session_state.get("trouble_reload_flag"):
-            st.session_state.trouble_reload_flag = False
-            st.rerun()
-        col_cat_debug, col_cat_button = st.columns([3, 1])
-        with col_cat_debug:
-            st.write(f"選択したカテゴリ：{category}")
-        with col_cat_button:
-            if st.button("決定", key="cat_confirm"):
-                st.rerun()
+        st.write(f"選択したカテゴリ：{category}")
+        st.write(f"登録済のカテゴリ：{len(cat_df)}件")
 
         st.markdown("#### 詳細機器名（小項目）")
-        mask2 = pd.Series(True, index=df.index)
-        if site:
-            mask2 &= df['現場名'].astype(str).apply(normalize_text) == normalize_text(site)
-        if eq:
-            mask2 &= df['設備名'].astype(str).apply(normalize_text) == normalize_text(eq)
-        if category:
-            mask2 &= df['カテゴリ'].astype(str).apply(normalize_text) == normalize_text(category)
-        detail_df = df[mask2]
-        st.write(f"登録済の機器名：{len(detail_df)}件")
-        details = sorted(set(detail_df['詳細機器名'].dropna().astype(str)))
         detail_input = st.text_input("詳細機器名", placeholder="正式名称推奨", label_visibility="collapsed", key="detail_input")
+        detail_df = df[(df['現場名'].astype(str) == site) & (df['設備名'].astype(str) == eq) & (df['カテゴリ'].astype(str) == category)]
+        details = sorted(set(detail_df['詳細機器名'].dropna().astype(str)))
         detail_select = st.selectbox("登録済のワードはこちらから選択してください。", options=[""] + details, index=0, key="detail_select_trouble")
+        col_detail, col_dec4 = st.columns([3, 1])
+        with col_dec4:
+            if st.button("決定", key="detail_decide"):
+                st.session_state.detail_input = detail_input
         detail = detail_select.strip() if detail_select.strip() else detail_input.strip()
-        if st.session_state.get("trouble_reload_flag"):
-            st.session_state.trouble_reload_flag = False
-            st.rerun()
-        
-        if st.session_state.get("trouble_reload_flag"):
-            st.session_state.trouble_reload_flag = False
-            st.rerun()
-
-        
-        
-        
-
-        st.markdown("#### トラブル内容")
+        st.write(f"登録済の機器名：{len(detail_df)}件")
         content = st.text_area("トラブル内容")
-
-        st.markdown("#### 対処")
         response = st.text_area("対処")
 
-        if st.button("登録する"):
-            try:
-                worksheet = get_worksheet("トラブル事例")
-                worksheet.append_row([site, eq, detail, content, response, category])
-                st.success("トラブル事例を登録しました。")
-                if st.button("🏠 ホームへ戻る"):
-                    st.session_state.page = "home"
+        if 'trouble_registered' not in st.session_state:
+            st.session_state.trouble_registered = False
+
+        if not st.session_state.trouble_registered:
+            if st.button("登録する"):
+                try:
+                    worksheet = get_worksheet("トラブル事例")
+                    worksheet.append_row([site, eq, detail, content, response, category])
+                    st.session_state.trouble_registered = True
+                    st.session_state.page = "trouble_register_done"
                     st.rerun()
-            except Exception as e:
-                st.error(f"登録に失敗しました: {e}")
+                except Exception as e:
+                    st.error(f"登録に失敗しました: {e}")
         return
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
